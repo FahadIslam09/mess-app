@@ -13,7 +13,8 @@ const API_BASE_URL = 'https://mess-backend-pg3z.onrender.com/api'; // আপন�
 const state = {
     members: [],
     bazar: [],
-    meals: [], // নতুন State
+    meals: [], 
+    deposits: [], // এই লাইনটি মিসিং ছিল
     report: { totalExpense: 0, totalMeals: 0, mealRate: 0, members: [] }
 };
 
@@ -21,6 +22,9 @@ const today = new Date();
 const currentYear = today.getFullYear();
 const currentMonth = today.getMonth() + 1;
 const todayString = today.toISOString().split('T')[0];
+// --- গ্লোবাল ডেট রেঞ্জ ভ্যারিয়েবল (নতুন) ---
+let globalStartDate = '';
+let globalEndDate = '';
 
 // --- AUTHENTICATION LOGIC ---
 const SECRET_PIN = "2026"; // আপনি চাইলে এটি পরিবর্তন করে আপনার মতো পিন দিতে পারেন
@@ -93,8 +97,39 @@ document.addEventListener('DOMContentLoaded', () => {
 document.addEventListener("DOMContentLoaded", () => {
     setupNavigation();
     setDefaultDates();
+    initGlobalDates(); // নতুন যোগ করা হলো
     loadAllData();
 });
+
+// গ্লোবাল ডেট ইনিশিয়ালাইজ করার ফাংশন (নতুন)
+function initGlobalDates() {
+    const now = new Date();
+    const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+    const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+
+    const offset = now.getTimezoneOffset() * 60000;
+    globalStartDate = new Date(firstDay.getTime() - offset).toISOString().split('T')[0];
+    globalEndDate = new Date(lastDay.getTime() - offset).toISOString().split('T')[0];
+
+    const startInput = document.getElementById('global-start-date');
+    const endInput = document.getElementById('global-end-date');
+    
+    if (startInput) startInput.value = globalStartDate;
+    if (endInput) endInput.value = globalEndDate;
+}
+
+// ফিল্টার অ্যাপ্লাই করার ফাংশন (নতুন)
+function applyGlobalFilter() {
+    globalStartDate = document.getElementById('global-start-date').value;
+    globalEndDate = document.getElementById('global-end-date').value;
+    
+    if (!globalStartDate || !globalEndDate) {
+        alert("দয়া করে From এবং To তারিখ ঠিকমতো সিলেক্ট করুন।");
+        return;
+    }
+    loadAllData(); // পুরো ডেটা নতুন তারিখ অনুযায়ী রিলোড হবে
+}
+//});
 
 function setupNavigation() {
     const navButtons = document.querySelectorAll('.nav-btn');
@@ -157,39 +192,53 @@ async function fetchMembers() {
 }
 
 async function fetchBazar() {
-    const res = await fetch(`${API_BASE_URL}/bazar?year=${currentYear}&month=${currentMonth}`);
+    // গ্লোবাল ডেট ব্যবহার করা হচ্ছে
+    const res = await fetch(`${API_BASE_URL}/bazar?startDate=${globalStartDate}&endDate=${globalEndDate}`);
     const json = await res.json();
     if (json.success) state.bazar = json.data;
 }
 
 async function fetchMeals() {
-    const res = await fetch(`${API_BASE_URL}/meals?year=${currentYear}&month=${currentMonth}`);
+    // গ্লোবাল ডেট ব্যবহার করা হচ্ছে
+    const res = await fetch(`${API_BASE_URL}/meals?startDate=${globalStartDate}&endDate=${globalEndDate}`);
     const json = await res.json();
     if (json.success) state.meals = json.data;
 }
 
 async function fetchDeposits() {
-    const res = await fetch(`${API_BASE_URL}/deposits?year=${currentYear}&month=${currentMonth}`);
+    // গ্লোবাল ডেট ব্যবহার করা হচ্ছে
+    const res = await fetch(`${API_BASE_URL}/deposits?startDate=${globalStartDate}&endDate=${globalEndDate}`);
     const json = await res.json();
     if (json.success) state.deposits = json.data;
 }
 
+// ফ্রন্টএন্ডের আপডেট করা fetchReport ফাংশন
 async function fetchReport() {
-    const res = await fetch(`${API_BASE_URL}/report?year=${currentYear}&month=${currentMonth}`);
-    const json = await res.json();
-    if (json.success) {
-        // Report-এর মেম্বারদেরকেও Room Number অনুযায়ী সাজানো হচ্ছে
-        json.data.members.sort((a, b) => 
-            a.room.localeCompare(b.room, undefined, { numeric: true })
-        );
-        state.report = json.data;
+    if (!globalStartDate || !globalEndDate) return;
+
+    try {
+        const res = await fetch(`${API_BASE_URL}/report?startDate=${globalStartDate}&endDate=${globalEndDate}`);
+        const json = await res.json();
+        
+        if (json.success) {
+            json.data.members.sort((a, b) => 
+                String(a.room).localeCompare(String(b.room), undefined, { numeric: true })
+            );
+            state.report = json.data;
+            if (typeof renderReportTable === 'function') {
+                renderReportTable();
+            }
+        }
+    } catch (error) {
+        console.error("Error fetching report:", error);
     }
 }
 
 // --- RENDERING ---
 function renderAll() {
     renderDashboard(); renderMembersTable(); renderMealChecklist(); renderMealTables(); 
-    renderBazarTable(); renderDeposits(); renderDepositSelect(); renderReportTable(); renderManagerSelection();
+    renderBazarTable(); renderDeposits(); renderDepositSelect(); renderReportTable(); 
+    renderManagerSelection(); renderBalanceTable(); renderLowBalanceAlert();
 }
 
 function renderDashboard() {
@@ -1102,4 +1151,155 @@ async function saveEditedMeal(event) {
         console.error("Error updating meal:", error);
         alert("নেটওয়ার্ক সমস্যা! দয়া করে আবার চেষ্টা করুন।");
     }
+}
+
+
+// --- BALANCE TABLE LOGIC ---
+function renderBalanceTable() {
+    const tbody = document.getElementById('table-balance');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+
+    // যদি রিপোর্ট ডেটা না থাকে
+    if (!state.report || !state.report.members || state.report.members.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="2" class="text-center text-muted py-4">No balance data available. Select a date range from the Dashboard first.</td></tr>`;
+        return;
+    }
+
+    state.report.members.forEach(member => {
+        // ব্যালেন্স যদি মাইনাস হয় (বাকি থাকে) তাহলে লাল, আর প্লাস হলে (অ্যাডভান্স) সবুজ
+        const balanceColor = member.balance < 0 ? 'text-danger' : 'text-success';
+        const balanceText = member.balance < 0 ? `Due: ৳${Math.abs(member.balance).toFixed(2)}` : `Adv: ৳${member.balance.toFixed(2)}`;
+        const managerBadge = member.isManager ? '<span class="badge bg-warning text-dark ms-1" style="font-size: 0.65rem;">Manager</span>' : '';
+
+        tbody.innerHTML += `
+            <tr>
+                <td class="ps-4">
+                    <div class="fw-bold text-dark">${member.name} ${managerBadge}</div>
+                    <small class="text-muted"><i class="bi bi-door-closed"></i> Room: ${member.room}</small>
+                </td>
+                <td class="text-end pe-4 fw-bold ${balanceColor}" style="font-size: 1.1rem;">
+                    ${balanceText}
+                </td>
+            </tr>
+        `;
+    });
+}
+
+
+// --- LOW BALANCE ALERT LOGIC ---
+function renderLowBalanceAlert() {
+    const tbody = document.getElementById('table-low-balance');
+    const thresholdInput = document.getElementById('low-balance-threshold');
+    
+    if (!tbody || !thresholdInput) return;
+
+    // ১. পেজ লোড হওয়ার পর প্রথমবার রেন্ডার হলে সেভ করা ভ্যালু মেমোরি থেকে বসানো
+    if (!thresholdInput.hasAttribute('data-loaded')) {
+        const savedThreshold = localStorage.getItem('savedLowBalanceLimit');
+        if (savedThreshold !== null) {
+            thresholdInput.value = savedThreshold;
+        }
+        thresholdInput.setAttribute('data-loaded', 'true');
+    }
+    
+    // ২. বর্তমান ইনপুট ভ্যালু পড়া (কিছু না থাকলে ডিফল্ট 0)
+    const threshold = Number(thresholdInput.value) || 0;
+
+    // ৩. ভ্যালুটি লোকাল স্টোরেজে সেভ করে রাখা (যাতে রিলোড দিলেও মনে থাকে)
+    localStorage.setItem('savedLowBalanceLimit', threshold);
+    
+    tbody.innerHTML = '';
+    
+    if (!state.report || !state.report.members || state.report.members.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="3" class="text-center text-muted py-3">No data available.</td></tr>`;
+        return;
+    }
+
+    // লজিক: ব্যালেন্স লিমিটের নিচে বা সমান + যারা অন্তত কিছু টাকা জমা করেছে + যারা ম্যানেজার নয়
+    const lowBalanceMembers = state.report.members.filter(m => 
+        m.balance <= threshold && m.depositedAmount > 0 && !m.isManager
+    );
+
+    if (lowBalanceMembers.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="3" class="text-center text-success py-4">
+                    <i class="bi bi-check-circle-fill fs-4 d-block mb-1"></i> 
+                    <span class="fw-bold">All good!</span> No member has a balance below ৳${threshold}.
+                </td>
+            </tr>`;
+        return;
+    }
+
+    // যাদের ব্যালেন্স সবচেয়ে কম বা মাইনাস, তাদের নাম সবার উপরে দেখানোর জন্য সর্টিং
+    lowBalanceMembers.sort((a, b) => a.balance - b.balance);
+
+    lowBalanceMembers.forEach(member => {
+        const balanceColor = member.balance < 0 ? 'text-danger' : 'text-warning text-dark';
+        tbody.innerHTML += `
+            <tr>
+                <td class="fw-bold text-dark">${member.name}</td>
+                <td class="text-muted"><small>${member.room}</small></td>
+                <td class="text-end fw-bold pe-3 ${balanceColor}">৳${member.balance.toFixed(2)}</td>
+            </tr>
+        `;
+    });
+}
+
+
+// --- COPY LOW BALANCE NAMES LOGIC ---
+function copyLowBalanceNames() {
+    const thresholdInput = document.getElementById('low-balance-threshold');
+    const threshold = Number(thresholdInput.value) || 0;
+
+    // ডেটা আছে কি না চেক করা
+    if (!state.report || !state.report.members || state.report.members.length === 0) {
+        alert("কপি করার মতো কোনো ডেটা নেই!");
+        return;
+    }
+
+    // ফিল্টার লজিক (ঠিক আগের মতোই)
+    const lowBalanceMembers = state.report.members.filter(m => 
+        m.balance <= threshold && m.depositedAmount > 0 && !m.isManager
+    );
+
+    if (lowBalanceMembers.length === 0) {
+        alert("লিস্টে কপি করার মতো কোনো মেম্বার নেই!");
+        return;
+    }
+
+    // ব্যালেন্স অনুযায়ী সাজানো
+    lowBalanceMembers.sort((a, b) => a.balance - b.balance);
+
+    // কপি করার জন্য সুন্দর একটি টেক্সট তৈরি করা
+    let copyText = `⚠️ Low Balance Alert (Below ৳${threshold}):\n\n`;
+    
+    lowBalanceMembers.forEach((member, index) => {
+        // ব্যালেন্স মাইনাস থাকলে Due দেখাবে, নাহলে শুধু ব্যালেন্স দেখাবে
+        const balanceText = member.balance < 0 ? `(Due: ৳${Math.abs(member.balance).toFixed(2)})` : `(Balance: ৳${member.balance.toFixed(2)})`;
+        copyText += `${index + 1}. ${member.name} - Room: ${member.room} ${balanceText}\n`;
+    });
+
+    copyText += `\nদয়া করে দ্রুত মেসে টাকা জমা দিন।`;
+
+    // ক্লিপবোর্ডে কপি করা (ব্রাউজারের বিল্ট-ইন ফিচার)
+    navigator.clipboard.writeText(copyText).then(() => {
+        // কপি সফল হলে বাটনের আইকন সাময়িকভাবে চেঞ্জ করে দেওয়া
+        const copyBtn = document.querySelector('button[onclick="copyLowBalanceNames()"]');
+        const originalHTML = copyBtn.innerHTML;
+        
+        copyBtn.innerHTML = '<i class="bi bi-check2-all"></i> Copied!';
+        copyBtn.classList.replace('btn-danger', 'btn-success');
+        
+        // ২ সেকেন্ড পর আবার আগের অবস্থায় ফিরিয়ে আনা
+        setTimeout(() => {
+            copyBtn.innerHTML = originalHTML;
+            copyBtn.classList.replace('btn-success', 'btn-danger');
+        }, 2000);
+        
+    }).catch(err => {
+        console.error("Copy failed", err);
+        alert("কপি করতে সমস্যা হয়েছে। আপনার ব্রাউজার হয়তো এটি সাপোর্ট করছে না।");
+    });
 }
