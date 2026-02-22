@@ -472,8 +472,17 @@ function renderMealTables() {
             `;
 
             sortedMealTypes.forEach(type => {
-                const isEating = groupedTodaysMeals[type].memberIds.includes(member._id);
-                tableHTML += `<td>${isEating ? '<span class="text-success" style="font-size: 1.2rem;">✅</span>' : '<span class="text-danger" style="font-size: 1.2rem;">❌</span>'}</td>`;
+                // সদস্যের আইডি লিস্টে কতবার আছে তা গুনে বের করা
+                const mealCount = groupedTodaysMeals[type].memberIds.filter(id => id === member._id).length;
+                
+                if (mealCount > 0) {
+                    // যতোটা মিল, ততোটা টিক চিহ্ন (যেমন: ২টা মিল থাকলে ✅✅ দেখাবে)
+                    const checkMarks = '✅'.repeat(mealCount);
+                    tableHTML += `<td><span class="text-success" style="font-size: 1.2rem; letter-spacing: 2px;">${checkMarks}</span></td>`;
+                } else {
+                    // কোনো মিল না থাকলে লাল ❌ দেখাবে
+                    tableHTML += `<td><span class="text-danger" style="font-size: 1.2rem;">❌</span></td>`;
+                }
             });
 
             tableHTML += `</tr>`;
