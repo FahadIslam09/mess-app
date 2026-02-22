@@ -392,40 +392,37 @@ function renderMealChecklist() {
 }
 
 function renderMealTables() {
+    // আগের কন্টেইনারগুলোর সাথে ড্যাশবোর্ডের নতুন কন্টেইনার যুক্ত করা হলো
     const todayContainer = document.getElementById('today-meals-container');
+    const dashboardTodayContainer = document.getElementById('dashboard-today-meals-container');
     const historyBody = document.getElementById('table-meal-history');
     
-    if (!todayContainer || !historyBody) return;
-    
-    todayContainer.innerHTML = '';
-    historyBody.innerHTML = '';
+    // ক্লিয়ার করা
+    if(todayContainer) todayContainer.innerHTML = '';
+    if(dashboardTodayContainer) dashboardTodayContainer.innerHTML = '';
+    if(historyBody) historyBody.innerHTML = '';
 
-    // ১. বাংলাদেশ সময় অনুযায়ী বর্তমান তারিখ নির্ধারণ
+    // ১. বর্তমান তারিখ নির্ধারণ
     const now = new Date();
     const offset = now.getTimezoneOffset() * 60000; 
     const localISOTime = (new Date(now.getTime() - offset)).toISOString().split('T')[0];
 
-    // আজকের এবং আগের দিনের মিলগুলো আলাদা করা
+    // ২. ডেটা ফিল্টার করা
     const todaysMeals = state.meals.filter(meal => meal.date.startsWith(localISOTime));
-    // const previousMeals = state.meals.filter(meal => !meal.date.startsWith(localISOTime));
-    const previousMeals = state.meals;
+    const previousMeals = state.meals; // সব মিল হিস্ট্রিতে দেখানোর জন্য
 
     // ==========================================
-    // ২. Today's Meals রেন্ডার করা (ম্যাট্রিক্স ডিজাইন)
+    // ৩. Today's Meals টেবিল তৈরি করা
     // ==========================================
     const groupedTodaysMeals = {};
     todaysMeals.forEach(meal => {
         if (!groupedTodaysMeals[meal.mealType]) {
-            groupedTodaysMeals[meal.mealType] = {
-                type: meal.mealType,
-                memberIds: []
-            };
+            groupedTodaysMeals[meal.mealType] = { type: meal.mealType, memberIds: [] };
         }
         const ids = meal.members.map(m => m._id || m);
         groupedTodaysMeals[meal.mealType].memberIds.push(...ids);
     });
 
-    // const mealOrder = ["Breakfast", "Lunch", "Dinner"];
     const mealOrder = ["Sehri", "Breakfast", "Lunch", "Iftar", "Dinner"];
     const sortedMealTypes = Object.keys(groupedTodaysMeals).sort((a, b) => {
         let indexA = mealOrder.indexOf(a);
@@ -435,8 +432,10 @@ function renderMealTables() {
         return indexA - indexB;
     });
 
+    let todayTableHTML = ''; // টেবিলের HTML জমা রাখার ভ্যারিয়েবল
+
     if (todaysMeals.length === 0) {
-        todayContainer.innerHTML = `<p class="text-center text-muted mb-0">আজকের জন্য এখনও কোনো মিল এন্ট্রি করা হয়নি।</p>`;
+        todayTableHTML = `<p class="text-center text-muted mb-0">আজকের জন্য এখনও কোনো মিল এন্ট্রি করা হয়নি।</p>`;
     } else {
         const membersWithActiveMeals = state.members
             .filter(m => m.isActive)
@@ -447,7 +446,7 @@ function renderMealTables() {
             })
             .sort((a, b) => String(a.room).localeCompare(String(b.room), undefined, { numeric: true }));
 
-        let tableHTML = `
+        todayTableHTML = `
             <div class="table-responsive">
                 <table class="table table-bordered align-middle text-center bg-white mb-0">
                     <thead class="table-light">
@@ -458,13 +457,13 @@ function renderMealTables() {
         `;
 
         sortedMealTypes.forEach(type => {
-            tableHTML += `<th class="text-primary text-uppercase">${type}</th>`;
+            todayTableHTML += `<th class="text-primary text-uppercase">${type}</th>`;
         });
 
-        tableHTML += `</tr></thead><tbody>`;
+        todayTableHTML += `</tr></thead><tbody>`;
 
         membersWithActiveMeals.forEach((member, index) => {
-            tableHTML += `
+            todayTableHTML += `
                 <tr>
                     <td>${index + 1}</td>
                     <td class="text-start fw-bold">${member.name}</td>
@@ -472,29 +471,36 @@ function renderMealTables() {
             `;
 
             sortedMealTypes.forEach(type => {
-                // সদস্যের আইডি লিস্টে কতবার আছে তা গুনে বের করা
                 const mealCount = groupedTodaysMeals[type].memberIds.filter(id => id === member._id).length;
                 
                 if (mealCount > 0) {
-                    // যতোটা মিল, ততোটা টিক চিহ্ন (যেমন: ২টা মিল থাকলে ✅✅ দেখাবে)
                     const checkMarks = '✅'.repeat(mealCount);
-                    tableHTML += `<td><span class="text-success" style="font-size: 1.2rem; letter-spacing: 2px;">${checkMarks}</span></td>`;
+                    todayTableHTML += `<td><span class="text-success" style="font-size: 1.2rem; letter-spacing: 2px;">${checkMarks}</span></td>`;
                 } else {
-                    // কোনো মিল না থাকলে লাল ❌ দেখাবে
-                    tableHTML += `<td><span class="text-danger" style="font-size: 1.2rem;">❌</span></td>`;
+                    todayTableHTML += `<td><span class="text-danger" style="font-size: 1.2rem;">❌</span></td>`;
                 }
             });
 
-            tableHTML += `</tr>`;
+            todayTableHTML += `</tr>`;
         });
 
-        tableHTML += `</tbody></table></div><p class="text-muted small mt-2 text-end">* মিল এডিট বা ডিলিট করতে নিচের Previous Meals সেকশন ব্যবহার করুন।</p>`;
-        todayContainer.innerHTML = tableHTML;
+        todayTableHTML += `</tbody></table></div>`;
+        
+        // শুধু Meal পেইজের জন্য নিচে একটি ছোট্ট নোট যোগ করা
+        if (todayContainer) {
+            todayTableHTML += `<p class="text-muted small mt-2 text-end">* মিল এডিট বা ডিলিট করতে নিচে Meal History সেকশন ব্যবহার করুন।</p>`;
+        }
     }
 
+    // ম্যাজিক: একই টেবিল দুই জায়গাতেই বসিয়ে দেওয়া হলো!
+    if (todayContainer) todayContainer.innerHTML = todayTableHTML;
+    if (dashboardTodayContainer) dashboardTodayContainer.innerHTML = todayTableHTML;
+
     // ==========================================
-    // ৩. Previous Meals রেন্ডার করা (তারিখ অনুযায়ী গ্রুপ করে)
+    // ৪. Previous Meals (History) রেন্ডার করা
     // ==========================================
+    if (!historyBody) return;
+
     if (previousMeals.length === 0) {
         historyBody.innerHTML = `<tr><td colspan="5" class="text-center text-muted">এই মাসে কোনো আগের মিল খুঁজে পাওয়া যায়নি।</td></tr>`;
     } else {
