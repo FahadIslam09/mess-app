@@ -61,7 +61,6 @@ function checkPIN() {
 function applyAuthRules() {
     const authBtn = document.getElementById('btn-auth');
     
-    // CSS এর মাধ্যমে ফর্ম এবং বাটন হাইড/শো করার ম্যাজিক!
     let styleTag = document.getElementById('auth-styles');
     if (!styleTag) {
         styleTag = document.createElement('style');
@@ -72,18 +71,23 @@ function applyAuthRules() {
     if (isManager) {
         authBtn.innerHTML = '<i class="bi bi-box-arrow-right"></i> Logout';
         authBtn.classList.replace('btn-warning', 'btn-danger');
-        // ম্যানেজার হলে সবকিছু দেখাবে (স্টাইল ফাঁকা করে দিলাম)
+        // ম্যানেজার হলে সবকিছু দেখাবে
         styleTag.innerHTML = ``; 
     } else {
         authBtn.innerHTML = '<i class="bi bi-box-arrow-in-right"></i> Manager Login';
         authBtn.classList.replace('btn-danger', 'btn-warning');
         
-        // ম্যানেজার না হলে Add ফর্ম এবং Action (Edit/Delete) বাটনগুলো লুকিয়ে ফেলবে
+        // ম্যানেজার না হলে Action বাটন লুকাবে, কিন্তু Balance টেবিলগুলোকে বাদ দিয়ে
         styleTag.innerHTML = `
             /* Add Forms Hide */
             .card:has(form), form { display: none !important; }
-            /* Action column and buttons hide */
-            th.text-end:last-child, td.text-end:last-child { display: none !important; }
+            
+            /* Action column hide (Report, Balance এবং Alert টেবিলগুলোকে বাদে) */
+            table:not(:has(#table-low-balance)):not(:has(#table-balance)):not(:has(#table-report)) th.text-end:last-child, 
+            table:not(:has(#table-low-balance)):not(:has(#table-balance)):not(:has(#table-report)) td.text-end:last-child { 
+                display: none !important; 
+            }
+            
             button[onclick^="delete"], button[onclick^="openEdit"] { display: none !important; }
         `;
     }
